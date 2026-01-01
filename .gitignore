@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+*.egg
+*.log
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# Jupyter and notebook
+.ipynb_checkpoints/
+
+# VSCode
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment and secrets
+.env
+.env.*
+
+# Data and cache
+*.sqlite3
+*.db
+*.pkl
+*.pickle
+*.h5
+*.faiss
+*.npy
+*.npz
+
+# Streamlit
+.streamlit/
+
+# Ignore data folder except demo.db
+code_files/data/*
+!code_files/data/demo.db
