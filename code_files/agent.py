@@ -2,31 +2,29 @@ import os
 import time
 from typing import List, Dict, Any, Optional
 
-import openai
+from dial_api import dial_embedding, dial_chat
 
 from vector_db import SimpleVectorStore
 from ingest import get_openai_key
 
 
 class RAGAgent:
-    def __init__(self, store: SimpleVectorStore, chat_model: str = None, embed_model: str = "text-embedding-3-small"):
+    def __init__(self, store: SimpleVectorStore, chat_model: str = None, embed_model: str = "text-embedding-3-small-1"):
         self.store = store
         self.embed_model = embed_model
-        self.chat_model = chat_model or os.getenv("OPENAI_CHAT_MODEL") or "gpt-3.5-turbo"
+        # Use the correct DIAL deployment name for the chat model
+        self.chat_model = chat_model or os.getenv("OPENAI_CHAT_MODEL") or "gpt-4o-mini-2024-07-18"
         key = get_openai_key()
         if not key:
             raise RuntimeError("OpenAI API key not found. Set OPENAI_API_KEY or put key in test.py")
-        openai.api_key = key
         # in-memory conversations
         self.conversations: Dict[str, List[Dict[str, str]]] = {}
 
     def _embed_query(self, query: str):
-        res = openai.Embedding.create(input=[query], model=self.embed_model)
-        return res["data"][0]["embedding"]
+        return dial_embedding([query], model=self.embed_model)[0]
 
     def _call_chat(self, messages: List[Dict[str, str]], max_tokens: int = 512):
-        resp = openai.ChatCompletion.create(model=self.chat_model, messages=messages, max_tokens=max_tokens, temperature=0.0)
-        return resp["choices"][0]["message"]["content"]
+        return dial_chat(messages, model=self.chat_model, max_tokens=max_tokens, temperature=0.0)
 
     def _build_context_from_retrievals(self, retrievals: List[Dict[str, Any]]) -> str:
         # create a single context string with source citations
@@ -47,16 +45,24 @@ class RAGAgent:
 
         q_vec = self._embed_query(question)
         retrievals = self.store.search(q_vec, top_k=top_k)
+        print(f"[RAGAgent] Retrievals for question '{question}':")
+        for rid, score, meta in retrievals:
+            print(f"  id={rid}, score={score}, text={meta.get('text','')[:80]}")
+        if not retrievals:
+            print("[RAGAgent] No relevant chunks retrieved.")
 
         # Build a grounded system prompt that prevents hallucination
         context = self._build_context_from_retrievals(retrievals)
 
         system = (
-            "You are an assistant that answers questions using ONLY the provided sources. "
-            "If the answer is not contained in the sources, say you don't know. "
-            "Cite sources inline using [source:chunk_index] and include a short excerpt if useful. "
-            "Be concise and avoid inventing facts."
-        )
+                        "You are a retrieval-grounded assistant.\n"
+                        "You MUST answer using ONLY the provided excerpts.\n"
+                        "If the answer is not explicitly present, respond with:\n"
+                        "'I don't know based on the provided document.'\n"
+                        "Do NOT use prior knowledge.\n"
+                        "Always cite sources like [filename:chunk_index]."
+                    )
+
 
         # include recent conversation for context following
         messages = [{"role": "system", "content": system}]

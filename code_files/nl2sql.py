@@ -1,7 +1,7 @@
 import os
 import sqlite3
 from typing import List, Dict, Any, Optional
-import openai
+from dial_api import dial_chat
 
 def get_openai_key():
     key = os.getenv("OPENAI_API_KEY")
@@ -25,23 +25,18 @@ def introspect_schema(conn) -> str:
     return "\n".join(schema)
 
 def generate_sql(question: str, schema: str, dialect: str = "sqlite") -> str:
-    key = get_openai_key()
-    if not key:
-        raise RuntimeError("OpenAI API key not found.")
-    openai.api_key = key
     system = (
         f"You are a helpful assistant that translates natural language to SQL for a {dialect} database. "
         "Given the schema below, write a single SQL query that answers the user's question. "
         "Only use tables and columns that exist. Do not hallucinate. Return only the SQL query, no explanation."
     )
     prompt = f"Schema:\n{schema}\n\nQuestion: {question}\nSQL:"
-    resp = openai.ChatCompletion.create(
-        model=os.getenv("OPENAI_CHAT_MODEL", "gpt-3.5-turbo"),
+    sql = dial_chat(
         messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}],
+        model=os.getenv("OPENAI_CHAT_MODEL", "gpt-3.5-turbo"),
         max_tokens=256,
         temperature=0.0,
-    )
-    sql = resp["choices"][0]["message"]["content"].strip()
+    ).strip()
     # Remove code block markers if present
     if sql.startswith("```"):
         sql = sql.split("\n", 1)[-1].strip()
