@@ -3,6 +3,37 @@ import sqlite3
 from typing import List, Dict, Any, Optional
 from dial_api import dial_chat
 
+import sqlite3
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(BASE_DIR, "data", "chinook.db")
+
+
+def get_db_schema():
+    """
+    Dynamically fetches DB schema from SQLite.
+    This function MUST NOT hardcode table or column names.
+    """
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    schema = {}
+
+    cursor.execute(
+        "SELECT name FROM sqlite_master WHERE type='table';"
+    )
+    tables = cursor.fetchall()
+
+    for (table,) in tables:
+        cursor.execute(f"PRAGMA table_info({table});")
+        columns = cursor.fetchall()
+        schema[table] = [
+            f"{col[1]} ({col[2]})" for col in columns
+        ]
+
+    conn.close()
+    return schema
+
 def get_openai_key():
     key = os.getenv("OPENAI_API_KEY")
     if key:
@@ -64,3 +95,4 @@ def result_to_nl(rows: List[Dict[str, Any]]) -> str:
         items = [f"{k}: {v}" for k, v in rows[0].items()]
         return "Result: " + ", ".join(items)
     return None  # For >1 row, show table
+

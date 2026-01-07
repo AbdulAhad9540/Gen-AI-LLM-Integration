@@ -29,7 +29,6 @@ Thumbs.db
 
 # Data and cache
 *.sqlite3
-*.db
 *.pkl
 *.pickle
 *.h5
@@ -42,4 +41,4 @@ Thumbs.db
 
 # Ignore data folder except demo.db
 code_files/data/*
-!code_files/data/demo.db
+!code_files/data/chinook.db

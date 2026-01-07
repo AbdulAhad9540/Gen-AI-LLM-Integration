@@ -6,6 +6,12 @@ from dial_api import dial_embedding, dial_chat
 
 from vector_db import SimpleVectorStore
 from ingest import get_openai_key
+import sqlite3
+from typing import List, Dict, Any
+from nl2sql import get_db_connection, introspect_schema, generate_sql
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(BASE_DIR, "data", "chinook.db")
 
 
 class RAGAgent:
@@ -95,3 +101,55 @@ class RAGAgent:
                 {"id": r[0], "score": r[1], "metadata": r[2]} for r in retrievals
             ],
         }
+
+
+
+def execute_sql(sql: str) -> List[Dict[str, Any]]:
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute(sql)
+        columns = [desc[0] for desc in cursor.description]
+        rows = cursor.fetchall()
+        return [dict(zip(columns, row)) for row in rows]
+    finally:
+        conn.close()
+
+
+def format_response(sql: str, rows: List[Dict[str, Any]]):
+    if not rows:
+        return {
+            "sql": sql,
+            "response_type": "text",
+            "answer": "No matching records were found."
+        }
+
+    if len(rows) == 1:
+        items = ", ".join(f"{k}: {v}" for k, v in rows[0].items())
+        return {
+            "sql": sql,
+            "response_type": "text",
+            "answer": items
+        }
+
+    return {
+        "sql": sql,
+        "response_type": "table",
+        "columns": list(rows[0].keys()),
+        "rows": [list(row.values()) for row in rows]
+    }
+
+
+def answer_question(question: str):
+    conn = get_db_connection(DB_PATH)
+    schema = introspect_schema(conn)
+    sql = generate_sql(question, schema)
+    conn.close()
+
+    # Safety check
+    if any(word in sql.lower() for word in ["insert", "update", "delete", "drop", "alter"]):
+        raise ValueError("Only SELECT queries are allowed")
+
+    rows = execute_sql(sql)
+    return format_response(sql, rows)
