@@ -116,23 +116,60 @@ def execute_sql(sql: str) -> List[Dict[str, Any]]:
     finally:
         conn.close()
 
+def generate_nl_answer(question: str, sql: str, rows):
+    """
+    Uses LLM to generate a natural language answer
+    based on the user question and SQL result.
+    """
 
-def format_response(sql: str, rows: List[Dict[str, Any]]):
+    system_prompt = (
+        "You are a helpful assistant that explains database query results "
+        "to users in clear, natural language."
+    )
+
+    user_prompt = f"""
+User question:
+{question}
+
+SQL query:
+{sql}
+
+Query result:
+{rows}
+
+Generate a concise and clear natural language answer.
+"""
+
+    answer = dial_chat(
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=0.2,
+        max_tokens=150,
+    )
+
+    return answer.strip()
+
+
+def format_response(question: str, sql: str, rows: List[Dict[str, Any]]):
     if not rows:
+        nl_answer = generate_nl_answer(question, sql, rows)
         return {
             "sql": sql,
             "response_type": "text",
-            "answer": "No matching records were found."
+            "answer": nl_answer
         }
 
     if len(rows) == 1:
-        items = ", ".join(f"{k}: {v}" for k, v in rows[0].items())
+        nl_answer = generate_nl_answer(question, sql, rows)
         return {
             "sql": sql,
             "response_type": "text",
-            "answer": items
+            "answer": nl_answer
         }
 
+    # >1 row → table (NO LLM)
     return {
         "sql": sql,
         "response_type": "table",
@@ -152,4 +189,7 @@ def answer_question(question: str):
         raise ValueError("Only SELECT queries are allowed")
 
     rows = execute_sql(sql)
-    return format_response(sql, rows)
+    return format_response(question, sql, rows)
+
+
+
