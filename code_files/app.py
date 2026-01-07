@@ -8,9 +8,14 @@ from fastapi.responses import JSONResponse
 from vector_db import SimpleVectorStore
 from ingest import ingest_pdf
 from agent import RAGAgent
-from nl2sql import get_db_connection, introspect_schema, generate_sql, execute_sql, result_to_nl
+from nl2sql import get_db_schema, get_db_connection, introspect_schema, generate_sql, execute_sql, result_to_nl
 
 from pydantic import BaseModel
+from agent import answer_question
+
+class NLQuery(BaseModel):
+    question: str
+
 
 class ChatRequest(BaseModel):
     question: str
@@ -35,8 +40,8 @@ except Exception as e:
     print(f"Warning: RAGAgent initialization failed: {e}")
     agent = None
 
-# Example: set DB path here (or use env var)
-DB_PATH = os.getenv("NL2SQL_DB_PATH", os.path.join(DATA_DIR, "demo.db"))
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(BASE_DIR, "data", "chinook.db")
 
 
 @app.post("/upload")
@@ -90,33 +95,45 @@ def get_conversation(conv_id: str):
     return {"conversation_id": conv_id, "messages": conv}
 
 
+
+@app.get("/db/schema")
+def db_schema():
+    """
+    Returns the live database schema.
+    Used to demonstrate dynamic DB introspection.
+    """
+    return get_db_schema()
+
 @app.post("/nl2sql")
-async def nl2sql_query(payload: dict):
+def nl_to_sql(req: NLQuery):
     """
-    Receives: {"question": "..."}
-    Returns: {"sql": ..., "result": ..., "table": ...}
+    Translates natural language to SQL using live DB schema.
     """
-    question = payload.get("question")
-    if not question:
-        return JSONResponse(status_code=400, content={"error": "Missing question"})
-    try:
-        conn = get_db_connection(DB_PATH)
-        schema = introspect_schema(conn)
-        sql = generate_sql(question, schema)
-        rows = execute_sql(conn, sql)
-        nl = result_to_nl(rows)
-        if nl is not None:
-            return {"sql": sql, "result": nl, "table": None}
-        else:
-            # Table view: return as list of dicts
-            return {"sql": sql, "result": None, "table": rows}
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
+
+    conn = get_db_connection(DB_PATH)
+
+    schema = introspect_schema(conn)
+    sql = generate_sql(req.question, schema)
+    conn.close()
+
+    return {
+        "question": req.question,
+        "sql": sql
+    }
+
+
+
+@app.post("/chat/query")
+def chat_query(req: NLQuery):
+    """
+    Full NL → SQL → execution chatbot endpoint.
+    """
+    return answer_question(req.question)
 
 
 # if __name__ == "__main__":
 #     import uvicorn
 
 #     uvicorn.run(app, host="0.0.0.0", port=8000)
-#What is the project code of Project Orion?
+
 #uvicorn app:app --host 0.0.0.0 --port 8000 --reload 
